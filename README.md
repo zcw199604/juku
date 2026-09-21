@@ -205,6 +205,8 @@ NAS 或宿主目录映射可改为 `/srv/juku/data:/data`、`/srv/juku/downloads
 
 `./scripts/docker-build.sh` 可单独构建，并接受 `--platform linux/arm64` 等 Docker 参数。构建上下文排除运行数据、视频、便携 FFmpeg 和 `dist/`。本次环境没有 Docker 引擎，未在真实容器运行新版；已有本地代理、FFmpeg 和合成媒体回归。
 
+GitHub Actions 同时构建并推送 `linux/amd64` 和 `linux/arm64` 镜像，两种架构共用 `latest`、提交 SHA 和版本标签。Docker 拉取时自动选择宿主架构，ARM64 设备可沿用相同的 Compose 镜像配置。构建阶段原生交叉编译 Go 程序，ARM64 运行镜像中的依赖安装通过 QEMU 完成。
+
 ## 反向代理
 
 建议使用独立域名的根路径，账号登录通过 HTTPS。Nginx 位置配置示例，`proxy_pass` 换成实际后端：

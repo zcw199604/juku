@@ -1,10 +1,12 @@
-FROM golang:1.26-bookworm AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS build
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY main.go ./
 COPY internal ./internal
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/juku .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/juku .
 
 FROM debian:bookworm-slim
 ENV TZ=Asia/Shanghai
