@@ -9,6 +9,7 @@
   const qualitySelect = node('playbackQuality');
   let quality = 0;
   let transport = 'mse';
+  let directPlayback = false;
   let allowRemux = false, streamRemux = false;
   try {quality = Number(localStorage.getItem('juku.playback.quality')) || 0;} catch (_) {}
   if (!Number.isInteger(quality) || quality < 0 || quality > 4320) quality = 0;
@@ -211,6 +212,7 @@
     video.load();
     if (objectURL) URL.revokeObjectURL(objectURL);
     objectURL = '';
+    directPlayback = false;
   }
 
   function dispose(unloading = false) {
@@ -575,6 +577,12 @@
     playbackDuration = Number(result.duration) || 0;
     updatePlaybackHint(result.source);
     updateQualities(result.qualities, Number(result.quality));
+    directPlayback = result.direct === true;
+    if (!directPlayback && !supportsNativePlayback()) {
+      transport = 'mse';
+      playEpisode(index, offset, shouldPlay, true);
+      return;
+    }
     statusText.textContent = result.prefetched ? '正在读取预缓存…' : '正在缓冲…';
     await waitForEvent(video, 'loadedmetadata', signal, () => {video.src = result.url; video.load();});
     if (signal.aborted || version !== streamVersion) throw abortError();
@@ -623,7 +631,7 @@
         updatePlaybackHint(preparation.source);
         window.dispatchEvent(new Event('downloadsChanged'));
       }
-      if (transport === 'hls') {
+      if (transport === 'hls' || transport === 'mse') {
         await playNative(index, offset, shouldPlay, version, currentSession, signal);
         return;
       }
@@ -724,6 +732,17 @@
     if (transport === 'hls' || code === 2) {
       await heartbeat(true);
       if (version !== streamVersion || !panel.open || recoveryPromise || !sessionAvailable) return;
+    }
+    if (directPlayback && currentIndex) {
+      directPlayback = false;
+      transport = 'mse';
+      playEpisode(currentIndex, lastPosition, desiredPlayback, true);
+      return;
+    }
+    if (transport === 'hls' && !supportsNativePlayback()) {
+      transport = 'mse';
+      playEpisode(currentIndex, lastPosition, desiredPlayback, true);
+      return;
     }
     if ([3, 4].includes(code) && currentIndex && fallbackPlayback(currentIndex, lastPosition, desiredPlayback)) return;
     if (streamController) streamController.abort();

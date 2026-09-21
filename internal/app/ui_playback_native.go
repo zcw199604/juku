@@ -35,6 +35,26 @@ func (app *UIApp) handlePlaybackNativeOpen(writer http.ResponseWriter, request *
 		writeJSON(writer, status, map[string]string{"error": err.Error()})
 		return
 	}
+	// Progressive, unencrypted provider media can be handed to the browser
+	// directly. Keep the existing private HLS proxy as the fallback for HLS,
+	// encrypted, downloaded, or otherwise incompatible media.
+	if run.downloadID == "" {
+		media, _, resolveErr := app.downloader.resolvePlaybackMedia(run.ctx, run.task)
+		if resolveErr == nil {
+			media, resolveErr = app.downloader.selectPlaybackQuality(context.WithValue(run.ctx, playbackQualityKey{}, input.Quality), media)
+		}
+		if resolveErr == nil && media.Playlist == "" && len(media.CENCKey) == 0 && isProviderHTTPMediaURL(media.URL) {
+			duration := media.Duration.Seconds()
+			if duration > 0 && duration <= 24*60*60 && input.Start < duration {
+				app.playbackRunReady(run, duration)
+				writeJSON(writer, http.StatusOK, map[string]any{
+					"url": media.URL, "direct": true, "run": run.run, "duration": duration,
+					"source": "direct", "quality": media.Quality, "qualities": playbackQualityOptions(media),
+				})
+				return
+			}
+		}
+	}
 	var cache *playbackNative
 	if run.cache != nil && run.cache.view().State != "failed" {
 		cache = run.cache.native
