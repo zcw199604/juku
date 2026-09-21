@@ -2,6 +2,8 @@ import { createCardViewport } from './card-viewport.js';
 import { createCoverRepair } from './cover-repair.js';
 import { createDramaRefresh } from './drama-refresh.js';
 import { createRecommendations } from './recommendations.js';
+import { createSearchSuggestions } from './search-suggestions.js';
+import { normalizeSearchText, searchTerms, matchesSearch, rankSearchResults } from './library-search.js';
 import { icon, initial, withFocus, readPreference, savePreference } from './ui-core.js';
 import { $, element, empty, button, setMessage, api, post, valueText, firstNonEmpty, dramaTitle, watchLabel, historySuffix, normalizeSource, sourceKey, sourceLabel, categoryName, episodeCount, coverURL, tagsText, dramaSearchText, rebuildOptions, number, formatBytes, formatTime, statusText, releaseText, phaseText, progressText, progressBar, episodeLabel, groupStats } from './ui-core.js';
 
@@ -11,10 +13,22 @@ export function createLibrary(app) {
   let libraryUpdateRequest = false, libraryQueuedUpdate = false;
   let libraryTimer, libraryBusyText = '', libraryIsLoading = false, libraryMetadataRemaining = {};
   let sortMessage = '', onlineSearchMessage = '', onlineSearchQuery = '', onlineSearchIDs = new Set();
+  let searchFilterMessage = '';
   let searchController, searchSequence = 0, batch = false, filterTimer;
   let pendingCategory = null, sourceWarning = '', readError = false;
   let vipMetadataRequest = false, vipMetadataMessage = '';
-  const recommendations = createRecommendations({allowed: () => app.viewer?.sources?.includes('hongguo') !== false, merge: mergeRecommendations, changed: renderDramas, switched: () => {resetOnlineSearch(); toggleBatch(false); app.shell.resetScroll();}});
+  const recommendations = createRecommendations({allowed: () => app.viewer?.sources?.includes('hongguo') !== false, merge: mergeRecommendations, changed: renderDramas, switched: () => {searchSuggestions.close(); resetOnlineSearch(); toggleBatch(false); app.shell.resetScroll();}});
+  const searchSuggestions = createSearchSuggestions({
+    input: $('searchInput'), panel: $('searchSuggestions'), list: $('searchSuggestionOptions'),
+    enabled: () => !recommendations.enabled && app.viewer?.sources?.includes('hongguo') !== false && ['', 'hongguo'].includes($('sourceSelect').value),
+    load: async (query, signal) => {
+      const result = await api('/api/ui/search/suggestions?q=' + encodeURIComponent(query), {signal});
+      if (result.query !== query || result.source !== 'hongguo' || !Array.isArray(result.data)) throw new Error('搜索联想暂不可用');
+      return result.data;
+    },
+    searchIcon: () => icon('search'), submit: searchOnline,
+    select: () => {resetOnlineSearch(); persistFilters(); renderDramas(); app.shell.resetScroll(); void searchOnline();}
+  });
   const viewport = createCardViewport({container: cards, scroller: $('workspaceMain'), create: renderCard, key: dramaCardKey, rendered: refreshFollowing, update: (card, drama) => {
     card.classList.toggle('selected', selected.has(drama.id));
     card.querySelector('input[type=checkbox]').checked = selected.has(drama.id);
@@ -60,8 +74,16 @@ export function createLibrary(app) {
   }
   const renderTasks = () => app.downloads.render();
   const pollTasks = () => app.downloads.refresh();
-function searchableText(drama) {if (!searchText.has(drama)) searchText.set(drama, dramaSearchText(drama)); return searchText.get(drama);}
-function filteredDramas(){ const keyword=$('searchInput').value.trim().toLowerCase();const source=$('sourceSelect').value;const channel=$('channelSelect').value;return dramas.filter(dr=>{if(!window.JukuVIP.visible(dr))return false;if(source&&sourceKey(dr)!==source)return false;const cat=categoryName(dr);if(channel&&cat!==channel)return false;return !keyword||searchableText(dr).includes(keyword)||onlineSearchQuery===keyword&&onlineSearchIDs.has(dr.id);}); }
+function searchableText(drama) {if (!searchText.has(drama)) searchText.set(drama, normalizeSearchText(dramaSearchText(drama))); return searchText.get(drama);}
+function filteredDramas() {
+  const query = $('searchInput').value.trim(), keyword = normalizeSearchText(query), terms = searchTerms(query);
+  const source = $('sourceSelect').value, channel = $('channelSelect').value;
+  return dramas.filter(drama => {
+    if (!window.JukuVIP.visible(drama)) return false;
+    if (source && sourceKey(drama) !== source || channel && categoryName(drama) !== channel) return false;
+    return matchesSearch(searchableText(drama), query, terms) || onlineSearchQuery === keyword && onlineSearchIDs.has(drama.id);
+  });
+}
 
 function rebuildSources(){ rebuildOptions($('sourceSelect'),app.viewer?.sources || ['huangguo','huangdou','hongguo'],'全部站源',sourceLabel,false); }
 
@@ -81,7 +103,7 @@ function updateLibraryButton() {
 
 function metadataPriorityIDs(){const pending=new Set(dramas.filter(drama=>!drama.sortMetadata||drama.sortMetadata.version!==(['huangguo','huangguoai','huangguoai.com'].includes(String(drama.source||drama.id).split(':')[0])?2:1)||sourceKey(drama)==='huangdou'&&drama.vip==null&&!drama.sortMetadata.vipChecked||sourceKey(drama)==='hongguo'&&!coverURL(drama)&&!drama.sortMetadata.coverChecked).map(drama=>drama.id));return visibleIDs.filter(id=>pending.has(id)).slice(0,40);}
 
-function updateRefreshLabel(){ const source=$('sourceSelect').value;$('vipFilterBtn').hidden=app.viewer?.sources?.includes('huangdou')===false||Boolean(source&&source!=='huangdou');const hongguo=app.viewer?.sources?.includes('hongguo')!==false&&(!source||source==='hongguo');updateLibraryButton();$('onlineSearchBtn').hidden=!hongguo;$('searchInput').placeholder='搜索剧名、简介或标签';$('onlineSearchBtn').title='联网搜索红果，也可按回车'; }
+function updateRefreshLabel(){ const source=$('sourceSelect').value;$('vipFilterBtn').hidden=app.viewer?.sources?.includes('huangdou')===false||Boolean(source&&source!=='huangdou');const hongguo=app.viewer?.sources?.includes('hongguo')!==false&&(!source||source==='hongguo');updateLibraryButton();$('onlineSearchBtn').hidden=!hongguo;if(!hongguo)searchSuggestions.close();$('searchInput').placeholder=hongguo?'筛选剧库，回车联网搜索红果':'搜索剧名、简介或标签';$('onlineSearchBtn').title='联网搜索红果，也可按回车'; }
 
 function placeholder(text){ return element('div','cover placeholder',text||'暂无封面'); }
 
@@ -179,7 +201,15 @@ function renderDramas() {
   for (const id of selected) {if (!byID.has(id) || !window.JukuVIP.visible(byID.get(id))) selected.delete(id);}
   const filtered = filteredDramas();
   const mode = $('sortSelect').value;
-  const list = recommendations.enabled ? recommendations.items().map(drama => byID.get(drama.id) || drama) : window.JukuLibrarySort.sortDramas(filtered, mode);
+  const query = $('searchInput').value.trim(), searching = !recommendations.enabled && Boolean(query);
+  const list = recommendations.enabled ? recommendations.items().map(drama => byID.get(drama.id) || drama) : searching && mode === 'default'
+    ? rankSearchResults(window.JukuLibrarySort.sortDramas(filtered, 'title'), query, searchableText, onlineSearchIDs)
+    : window.JukuLibrarySort.sortDramas(filtered, mode);
+  $('sortSelect').options[0].textContent = searching ? '相关度优先' : '默认排序';
+  const hiddenOnline = searching && onlineSearchQuery === normalizeSearchText(query) && $('channelSelect').value
+    ? dramas.filter(drama => onlineSearchIDs.has(drama.id) && categoryName(drama) !== $('channelSelect').value).length : 0;
+  searchFilterMessage = hiddenOnline ? '当前分类隐藏了 ' + hiddenOnline + ' 部联网结果' : '';
+  $('clearSearchCategoryBtn').hidden = !hiddenOnline;
   sortMessage = recommendations.enabled ? '' : window.JukuLibrarySort.summary(filtered, mode);
   $('sortSelect').title = '缺少数据的剧集排在后面；不同站源的统计口径可能不同。' + sortMessage;
   visibleIDs = list.map(drama => drama.id);
@@ -281,7 +311,9 @@ function mergeRecommendations(items) {
 function updateLibraryStatus() {
   const source = $('sourceSelect').value;
   const vip = recommendations.enabled ? '' : window.JukuVIP.summary(dramas.filter(drama => (!source || sourceKey(drama) === source)));
-  const text = [libraryBusyText, onlineSearchMessage, sourceWarning, vip, vipMetadataMessage, sortMessage].filter(Boolean).join(' · ');
+  const localSearch = !recommendations.enabled && $('searchInput').value.trim() && !onlineSearchMessage
+    ? '当前为本地筛选' + (!$('onlineSearchBtn').hidden ? '，按回车或点“联网搜索”查找更多红果剧集' : '') : '';
+  const text = [libraryBusyText, onlineSearchMessage || localSearch, searchFilterMessage, sourceWarning, vip, vipMetadataMessage, sortMessage].filter(Boolean).join(' · ');
   $('libraryStatus').textContent = text;
   $('libraryFeedback').hidden = !text;
   $('retryLibraryBtn').hidden = !readError;
@@ -301,25 +333,34 @@ async function refreshVIPMetadata(priority = visibleIDs) {
   finally {vipMetadataRequest = false; updateLibraryStatus();}
 }
 
-function resetOnlineSearch(){searchSequence++;if(searchController)searchController.abort();searchController=null;onlineSearchQuery='';onlineSearchIDs.clear();onlineSearchMessage='';$('onlineSearchBtn').disabled=false;$('onlineSearchBtn').textContent='联网搜索';updateLibraryStatus();}
+function resetOnlineSearch(){searchSequence++;if(searchController)searchController.abort();searchController=null;onlineSearchQuery='';onlineSearchIDs.clear();onlineSearchMessage='';searchFilterMessage='';$('clearSearchCategoryBtn').hidden=true;$('onlineSearchBtn').disabled=false;$('onlineSearchBtn').textContent='联网搜索';updateLibraryStatus();}
 
 async function searchOnline(){
+    searchSuggestions.close();
     rememberSearch($('searchInput').value);
     if(app.viewer?.sources?.includes('hongguo')===false||$('sourceSelect').value&&$('sourceSelect').value!=='hongguo')return;
     const keyword=$('searchInput').value.trim();if(!keyword){setMessage('请先输入搜索词',true);return;}if(searchController)return;
     resetOnlineSearch();const sequence=searchSequence;const controller=new AbortController();searchController=controller;
     $('onlineSearchBtn').disabled=true;$('onlineSearchBtn').textContent='搜索中';onlineSearchMessage='正在联网搜索红果';updateLibraryStatus();
+    let received=0;
     try{
-      const result=await api('/api/ui/search?q='+encodeURIComponent(keyword),{signal:controller.signal});
-      if(sequence!==searchSequence||keyword!==$('searchInput').value.trim())return;
-      const matches=(Array.isArray(result.data)?result.data:[]).filter(drama=>sourceKey(drama)==='hongguo');
-      onlineSearchQuery=keyword.toLowerCase();onlineSearchIDs=new Set(matches.map(drama=>drama.id));
+      await api('/api/ui/search?q='+encodeURIComponent(keyword)+'&stream=1',{signal:controller.signal,onResult:result=>{
+        if(sequence!==searchSequence||controller.signal.aborted||keyword!==$('searchInput').value.trim())return;
+        if(result.query!==keyword||result.source!=='hongguo'||!Array.isArray(result.data))throw new Error('未收到有效的搜索结果');
+        const matches=result.data.filter(drama=>sourceKey(drama)==='hongguo');
+        onlineSearchQuery=normalizeSearchText(keyword);onlineSearchIDs=new Set(matches.map(drama=>drama.id));received=onlineSearchIDs.size;
 
-      const positions=new Map(dramas.map((drama,index)=>[drama.id,index]));for(let drama of matches){drama=reconcileDrama(drama);const position=positions.get(drama.id);if(position===undefined){positions.set(drama.id,dramas.length);dramas.push(drama);}else dramas[position]=drama;}
-      onlineSearchMessage=matches.length?'联网返回 '+matches.length+' 部红果'+(result.total>matches.length?'（首批匹配）':''):'联网暂无匹配';
-      if(matches.length&&result.saved===false)onlineSearchMessage+='，缓存未保存';
-      for(const drama of dramas)byID.set(drama.id,drama);rebuildSources();rebuildChannels(false);renderDramas();app.following.render();updateLibraryStatus();libraryRevision=0;await loadDramas(false);
-    }catch(error){if(sequence===searchSequence&&!controller.signal.aborted){onlineSearchMessage='联网搜索暂不可用：'+error.message+'；可重试，本地筛选仍可使用';updateLibraryStatus();}}
+        const positions=new Map(dramas.map((drama,index)=>[drama.id,index]));for(let drama of matches){drama=reconcileDrama(drama);const position=positions.get(drama.id);if(position===undefined){positions.set(drama.id,dramas.length);dramas.push(drama);}else dramas[position]=drama;}
+        onlineSearchMessage=received?'联网找到 '+received+' 部红果':'联网暂无匹配';
+        if(!result.done)onlineSearchMessage+='，继续查找中';
+        else if(result.warning)onlineSearchMessage+='；'+result.warning;
+        else if(result.limited)onlineSearchMessage+='；可尝试完整剧名查找其他结果';
+        if(received&&result.saved===false)onlineSearchMessage+='，缓存未保存';
+        for(const drama of dramas)byID.set(drama.id,drama);rebuildSources();rebuildChannels(false);renderDramas();app.following.render();updateLibraryStatus();
+      }});
+      if(sequence!==searchSequence||controller.signal.aborted)return;
+      libraryRevision=0;await loadDramas(false);
+    }catch(error){if(sequence===searchSequence&&!controller.signal.aborted){onlineSearchMessage=(received?'已保留 '+received+' 部红果；':'')+'联网搜索暂不可用：'+error.message+'；可重试，本地筛选仍可使用';updateLibraryStatus();}}
     finally{if(sequence===searchSequence){searchController=null;$('onlineSearchBtn').disabled=false;$('onlineSearchBtn').textContent='联网搜索';}}
   }
 
@@ -344,6 +385,7 @@ function persistFilters() {
 }
 
 function resetFilters() {
+  searchSuggestions.close();
   resetOnlineSearch();
   $('sourceSelect').value = '';
   $('searchInput').value = '';
@@ -406,10 +448,11 @@ function rememberSearch(raw) {
 function renderSearchHistory() {
   const list = searchHistory(), target = $('recentSearches');
   target.replaceChildren();
-  target.hidden = !list.length;
-  if (!list.length) return;
+  target.hidden = !list.length || Boolean($('searchInput').value.trim());
+  if (target.hidden) return;
   target.appendChild(element('span', 'small', '最近搜索'));
   list.forEach(query => target.appendChild(button(query, () => {
+    searchSuggestions.close();
     $('searchInput').value = query;
     resetOnlineSearch();
     renderDramas();
@@ -436,6 +479,7 @@ function init() {
   $('refreshBtn').addEventListener('click', () => loadDramas(true));
   $('retryLibraryBtn').addEventListener('click', () => loadDramas(false));
   $('searchInput').addEventListener('input', () => {
+    $('recentSearches').hidden = true;
     resetOnlineSearch();
     persistFilters();
     refreshFilterSummary();
@@ -446,12 +490,10 @@ function init() {
   $('searchInput').addEventListener('blur', () => setTimeout(() => {
     if (!$('recentSearches').contains(document.activeElement)) $('recentSearches').hidden = true;
   }, 150));
-  $('searchInput').addEventListener('keydown', event => {
-    if (event.key === 'Enter' && !event.isComposing) {event.preventDefault(); searchOnline();}
-  });
-  $('clearSearchBtn').addEventListener('click', () => {$('searchInput').value = ''; resetOnlineSearch(); filters(); $('searchInput').focus();});
+  $('clearSearchBtn').addEventListener('click', () => {searchSuggestions.close(); $('searchInput').value = ''; resetOnlineSearch(); filters(); $('searchInput').focus(); renderSearchHistory();});
   $('onlineSearchBtn').addEventListener('click', searchOnline);
-  $('sourceSelect').addEventListener('change', () => {pendingCategory = null; resetOnlineSearch(); rebuildChannels(true); filters();});
+  $('clearSearchCategoryBtn').addEventListener('click', () => {pendingCategory = null; $('channelSelect').value = ''; filters();});
+  $('sourceSelect').addEventListener('change', () => {searchSuggestions.close(); $('recentSearches').hidden = true; pendingCategory = null; resetOnlineSearch(); rebuildChannels(true); filters();});
   $('channelSelect').addEventListener('change', filters);
   $('sortSelect').addEventListener('change', filters);
   $('resetFiltersBtn').addEventListener('click', resetFilters);

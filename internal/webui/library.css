@@ -1,6 +1,15 @@
 .library-toolbar{display:flex;align-items:center;gap:18px;margin-bottom:10px}
 .library-search{display:flex;gap:6px;flex:1;min-width:230px;max-width:960px}
 .library-search>button{flex:none;white-space:nowrap;padding:6px 11px}
+.search-combobox{position:relative;flex:1;min-width:0}
+.search-suggestions{position:absolute;z-index:12;top:calc(100% + 5px);left:0;right:0;max-height:380px;overflow:auto;overscroll-behavior:contain;border:1px solid var(--line);border-radius:var(--control-radius);background:var(--panel);box-shadow:var(--shadow);padding:4px}
+.search-suggestions-heading{padding:5px 9px;color:var(--muted);font-size:11px}
+.search-suggestion{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:9px;border:0;border-radius:5px;background:transparent;color:var(--text);font-size:14px;font-weight:400;text-align:left;line-height:1.5}
+.search-suggestion>svg{flex:none;width:16px;height:16px;color:var(--muted)}
+.search-suggestion-name{min-width:0;overflow-wrap:anywhere}
+.search-suggestion mark{background:transparent;color:var(--brand-text);font-weight:650}
+.search-suggestion[aria-selected=true]{background:var(--tint)}
+@media(hover:hover){.search-suggestion:hover{background:var(--tint);filter:none}}
 .search-field{display:flex;align-items:center;gap:8px;flex:1;min-width:0;border:1px solid var(--line);background:var(--panel);border-radius:var(--control-radius);padding:0 10px;min-height:36px}
 .search-field>svg{color:var(--muted);width:16px;height:16px}
 .search-field:focus-within{border-color:var(--brand-text);box-shadow:0 0 0 2px var(--tint)}

@@ -1,4 +1,5 @@
 import { viewerHeaders, checkViewerResponse } from './viewer.js';
+import { readSearchResponse } from './search-stream.js';
 
 export const $ = id => document.getElementById(id);
 let messageTimer;
@@ -22,7 +23,18 @@ function setMessage(text, isError = false, action = null) {
   messageTimer = setTimeout(() => target.replaceChildren(), action ? 10000 : 6500);
 }
 
-async function api(path, options){ const init=options||{}; init.headers=Object.assign({'Accept':'application/json'},viewerHeaders(),init.headers||{}); if(init.body)init.headers['Content-Type']='application/json'; const response=await fetch(path,init); let data; try{data=await response.json();}catch(_){throw new Error('服务器未返回有效 JSON，请确认已启动新版程序');} checkViewerResponse(data); if(!response.ok){const error=new Error(data.error||'HTTP '+response.status);error.status=response.status;throw error;} return data; }
+async function api(path, options){
+  const {onResult, ...init}=options||{};
+  init.headers=Object.assign({'Accept':onResult?'application/x-ndjson':'application/json'},viewerHeaders(),init.headers||{});
+  if(init.body)init.headers['Content-Type']='application/json';
+  const response=await fetch(path,init);
+  if(onResult)return readSearchResponse(response,onResult,checkViewerResponse);
+  let data;
+  try{data=await response.json();}catch(_){throw new Error('服务器未返回有效 JSON，请确认已启动新版程序');}
+  checkViewerResponse(data);
+  if(!response.ok){const error=new Error(data.error||'HTTP '+response.status);error.status=response.status;throw error;}
+  return data;
+}
 
 function post(path, body){ return api(path,{method:'POST',body:JSON.stringify(body)}); }
 

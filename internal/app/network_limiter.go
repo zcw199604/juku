@@ -31,7 +31,7 @@ func (backoff *requestBackoff) Error() string {
 	return fmt.Sprintf("%s HTTP %d%s，已暂停该域名请求，%s 后可重试", backoff.host, backoff.status, reason, backoff.until.Format("15:04:05"))
 }
 
-func (d *Downloader) catalogResponseError(request *http.Request, response *http.Response, body []byte) error {
+func catalogResponseBlockReason(response *http.Response, body []byte) string {
 	if len(body) > 64*1024 {
 		body = body[:64*1024]
 	}
@@ -42,6 +42,11 @@ func (d *Downloader) catalogResponseError(request *http.Request, response *http.
 	} else if strings.EqualFold(response.Header.Get("Cf-Mitigated"), "challenge") || strings.Contains(page, "cf-chl-") || strings.Contains(page, "just a moment") {
 		reason = "站点要求浏览器验证，当前请求无法通过"
 	}
+	return reason
+}
+
+func (d *Downloader) catalogResponseError(request *http.Request, response *http.Response, body []byte) error {
+	reason := catalogResponseBlockReason(response, body)
 	host := strings.ToLower(request.URL.Hostname())
 	if d.limiter != nil && (response.StatusCode == http.StatusForbidden || response.StatusCode == http.StatusTooManyRequests) {
 		d.limiter.mu.Lock()

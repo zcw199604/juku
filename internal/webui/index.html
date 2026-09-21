@@ -33,7 +33,7 @@
   <section class="page-view" id="libraryPage" data-view="library" aria-label="剧库">
     <div class="library-toolbar">
       <div class="library-search" id="librarySearch">
-        <div class="search-field"><span data-icon="search"></span><input id="searchInput" type="search" maxlength="80" autocomplete="off" placeholder="搜索剧名、简介或标签" aria-label="搜索剧库"><button id="clearSearchBtn" class="quiet icon-button" aria-label="清空搜索" hidden><span data-icon="close"></span></button></div>
+        <div class="search-combobox"><div class="search-field"><span data-icon="search"></span><input id="searchInput" type="search" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="searchSuggestionOptions" aria-expanded="false" maxlength="80" autocomplete="off" placeholder="搜索剧名、简介或标签" aria-label="搜索剧库"><button id="clearSearchBtn" class="quiet icon-button" aria-label="清空搜索" hidden><span data-icon="close"></span></button></div><div id="searchSuggestions" class="search-suggestions" hidden><div class="search-suggestions-heading">红果搜索建议</div><div id="searchSuggestionOptions" role="listbox" aria-label="红果搜索建议"></div></div></div>
         <button id="onlineSearchBtn" class="subtle">联网搜索</button>
       </div>
       <div id="recommendToolbar" class="recommend-toolbar" hidden><label class="catalog-select"><select id="recommendGenre" aria-label="红果推荐分类"><option value="short_play">真人剧</option><option value="comic_series">漫剧</option><option value="ai_series">AI 剧</option></select><span data-icon="chevron"></span></label><span class="small">分类推荐 · 无需登录</span><button id="recommendRefreshBtn" class="quiet button-content" title="从当前分类重新获取推荐，结果可能相同"><span data-icon="refresh"></span>重新获取</button></div>
@@ -46,7 +46,7 @@
       </div>
     </div>
     <div class="recent-searches" id="recentSearches" hidden aria-label="最近搜索"></div>
-    <div id="libraryFeedback" class="library-feedback" hidden><span id="libraryStatus" class="small" role="status" aria-live="polite"></span><button id="retryLibraryBtn" class="quiet" hidden>重试读取</button></div>
+    <div id="libraryFeedback" class="library-feedback" hidden><span id="libraryStatus" class="small" role="status" aria-live="polite"></span><button id="clearSearchCategoryBtn" class="quiet" hidden>取消分类筛选</button><button id="retryLibraryBtn" class="quiet" hidden>重试读取</button></div>
     <div class="catalog-layout" id="catalogLayout">
       <div class="catalog-content">
         <div class="section-heading catalog-heading"><div class="library-view-switch" role="group" aria-label="浏览内容"><button id="libraryModeBtn" class="quiet" aria-pressed="true">剧库</button><button id="recommendModeBtn" class="quiet" aria-pressed="false">红果推荐</button><span id="dramaCount" class="small" role="status"></span></div><section id="continueSection" class="continue-section" aria-labelledby="continueTitle" hidden>

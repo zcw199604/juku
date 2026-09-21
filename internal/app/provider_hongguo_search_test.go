@@ -24,7 +24,7 @@ func TestHongguoSearchSortMetadata(t *testing.T) {
 		}
 		return rankingHTTPResponse(request, http.StatusOK, searchSortFixture), nil
 	})
-	result, err := d.fetchHongguoSearch(context.Background(), "测试")
+	result, err := d.fetchHongguoSearchPage(context.Background(), "测试")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +67,9 @@ func TestLibrarySearchReturnsMergedSortMetadata(t *testing.T) {
 	var calls atomic.Int32
 	release := make(chan struct{})
 	d := rankingTestDownloader(t, func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path == "/incent_resource/suggestion" {
+			return rankingHTTPResponse(request, http.StatusOK, `{"suggest_list":[]}`), nil
+		}
 		if request.URL.Path == "/search/测试" {
 			calls.Add(1)
 			return rankingHTTPResponse(request, http.StatusOK, searchSortFixture), nil

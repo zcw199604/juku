@@ -259,6 +259,7 @@ func (a *UIApp) routes() http.Handler {
 	mux.HandleFunc("/api/ui/dramas/refresh", a.handleDramaRefresh)
 	mux.HandleFunc("/api/ui/vip/metadata", a.handleVIPMetadata)
 	mux.HandleFunc("/api/ui/search", a.handleLibrarySearch)
+	mux.HandleFunc("/api/ui/search/suggestions", a.handleLibrarySearchSuggestions)
 	mux.HandleFunc("/api/ui/following", a.handleFollowing)
 	mux.HandleFunc("/api/ui/rankings", a.handleRankings)
 	mux.HandleFunc("/api/ui/recommendations", a.handleRecommendations)
